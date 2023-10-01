@@ -2,11 +2,18 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::ops::Deref;
 
-trait Data {
+use serde::{Deserialize, Serialize};
+
+#[typetag::serde]
+trait Component {
+    fn get_port(&self) -> Box<dyn Port>;
+}
+
+trait Port {
     fn as_any_ref(&self) -> &dyn Any;
 }
 
-impl<T> Data for T
+impl<T> Port for T
 where
     T: Any,
 {
@@ -17,31 +24,59 @@ where
     }
 }
 
-#[derive(Debug)]
-struct Foo;
+#[derive(Debug, Serialize, Deserialize)]
+struct Foo {}
 
-#[derive(Debug)]
-struct Bar;
+#[typetag::serde]
+impl Component for Foo {
+    fn get_port(&self) -> Box<dyn Port> {
+        Box::new(22u8)
+    }
+}
+
+// #[derive(Debug)]
+// struct Bar;
 
 fn main() {
-    let mut v: Vec<Box<dyn Data>> = vec![];
+    let mut v: Vec<Box<dyn Port>> = vec![];
 
-    v.push(Box::new(Foo));
-    // v.push(Box::new(2u32));
+    let foo = Foo {};
+
+    v.push(foo.get_port());
+    v.push(Box::new(42u8));
+    v.push(Box::new(1337u32));
 
     for d in v {
-        // let d = d.deref();
-        let d = d.deref().as_any_ref().downcast_ref::<Foo>();
-        match d {
-            Some(f) => println!("{:?}", f),
-            None => println!("No Foo..."),
-        };
+        let d = d.deref().as_any_ref();
 
-        // match x.downcast_ref::<u32>() {
-        //     Some(b) => println!("word {:?}", b),
-        //     None => println!("No word..."),
-        // };
+        match d.downcast_ref::<u8>() {
+            Some(f) => println!("u8 {:?}", f),
+            None => println!("No u8.."),
+        };
+        match d.downcast_ref::<u32>() {
+            Some(f) => println!("u32 {:?}", f),
+            None => println!("No u32.."),
+        };
     }
+
+    // let mut v: Vec<Box<dyn Component>> = vec![];
+
+    // v.push(Box::new(Foo));
+    // // v.push(Box::new(2u32));
+
+    // for c in v {
+    //     let p = c.as_any_ref();
+    //     let d = p.downcast_ref::<Foo>();
+    //     match d {
+    //         Some(f) => println!("{:?}", f),
+    //         None => println!("No Foo..."),
+    //     };
+
+    //     // match x.downcast_ref::<u32>() {
+    //     //     Some(b) => println!("word {:?}", b),
+    //     //     None => println!("No word..."),
+    //     // };
+    // }
 }
 
 // fn log(value: &dyn Any) {
