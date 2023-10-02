@@ -1,21 +1,25 @@
 use std::any::Any;
 use std::fmt::Debug;
 use std::ops::Deref;
+use std::rc::Rc;
+use std::sync::RwLock;
 
 use serde::{Deserialize, Serialize};
 
+pub type Id = String;
+
 #[typetag::serde]
 trait Component {
-    fn get_port(&self) -> Box<dyn Port>;
+    fn get_port(&self) -> (Id, Ports);
 }
 
-trait Port {
+trait Data {
     fn as_any_ref(&self) -> &dyn Any;
 }
 
-impl<T> Port for T
+impl<T> Data for T
 where
-    T: Any,
+    T: Any + Serialize,
 {
     // This cast cannot be written in a default implementation so cannot be
     // moved to the original trait without implementing it for every type.
@@ -24,40 +28,126 @@ where
     }
 }
 
+pub struct Ports {
+    pub inputs: Vec<Input>,
+    pub output: Vec<Output>,
+}
+
+pub struct Input {
+    pub id: Id,
+    pub field: Id,
+}
+
+pub struct Output {
+    pub field: Id,
+    data: Rc<dyn Data>,
+}
 #[derive(Debug, Serialize, Deserialize)]
-struct Foo {}
+struct Foo {
+    id: Id,
+    out: (Id, Rc<RwLock<u32>>),
+}
 
 #[typetag::serde]
 impl Component for Foo {
-    fn get_port(&self) -> Box<dyn Port> {
-        Box::new(22u8)
+    fn get_port(&self) -> (Id, Ports) {
+        (
+            self.id.clone(),
+            Ports {
+                inputs: vec![],
+                output: vec![Output {
+                    field: self.out.0.clone(),
+                    data: self.out.1.clone(),
+                }],
+            },
+        )
     }
 }
 
-// #[derive(Debug)]
-// struct Bar;
+#[derive(Debug, Serialize, Deserialize)]
+struct Bar {
+    id: Id,
+    out: (Id, Rc<RwLock<u8>>),
+}
+
+#[typetag::serde]
+impl Component for Bar {
+    fn get_port(&self) -> (Id, Ports) {
+        (
+            self.id.clone(),
+            Ports {
+                inputs: vec![],
+                output: vec![Output {
+                    field: self.out.0.clone(),
+                    data: self.out.1.clone(),
+                }],
+            },
+        )
+    }
+}
 
 fn main() {
-    let mut v: Vec<Box<dyn Port>> = vec![];
+    type Components = Vec<Rc<dyn Component>>;
+    let mut v: Components = vec![];
 
-    let foo = Foo {};
+    let foo = Rc::new(Foo {
+        id: "foo".into(),
+        out: ("out".into(), Rc::new(RwLock::new(22))),
+    });
 
-    v.push(foo.get_port());
-    v.push(Box::new(42u8));
-    v.push(Box::new(1337u32));
+    let bar = Rc::new(Bar {
+        id: "bar".into(),
+        out: ("out".into(), Rc::new(RwLock::new(33))),
+    });
 
-    for d in v {
-        let d = d.deref().as_any_ref();
+    v.push(foo);
+    v.push(bar);
 
-        match d.downcast_ref::<u8>() {
+    let mut id_ports = std::collections::HashMap::new();
+    for i in v {
+        let (id, ports) = i.get_port();
+        id_ports.insert(id, ports);
+    }
+
+    for (id, port) in id_ports {
+        println!("id {}", id);
+        match port.output[0]
+            .data
+            .deref()
+            .as_any_ref()
+            .downcast_ref::<u8>()
+        {
             Some(f) => println!("u8 {:?}", f),
             None => println!("No u8.."),
         };
-        match d.downcast_ref::<u32>() {
+
+        println!("id {}", id);
+        match port.output[0]
+            .data
+            .deref()
+            .as_any_ref()
+            .downcast_ref::<RwLock<u32>>()
+        {
             Some(f) => println!("u32 {:?}", f),
             None => println!("No u32.."),
         };
     }
+
+    // v.push(Box::new(42u8));
+    // v.push(Box::new(1337u32));
+
+    // for d in v {
+    //     let d = d.deref().as_any_ref();
+
+    //     match d.downcast_ref::<u8>() {
+    //         Some(f) => println!("u8 {:?}", f),
+    //         None => println!("No u8.."),
+    //     };
+    //     match d.downcast_ref::<u32>() {
+    //         Some(f) => println!("u32 {:?}", f),
+    //         None => println!("No u32.."),
+    //     };
+    // }
 
     // let mut v: Vec<Box<dyn Component>> = vec![];
 
